@@ -1,40 +1,58 @@
-name: Build Russian ADS hosts
+#!/usr/bin/env python3
+import re
+import requests
 
-on:
-  schedule:
-    - cron: '0 3 * * *'   # ежедневное обновление в 03:00 UTC
-  workflow_dispatch:       # запуск вручную
+# Источник: обычный ruadlist+easylist
+SRC_URL = "https://easylist-downloads.adblockplus.org/ruadlist+easylist.txt"
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+# Куда писать результат
+OUT_FILE = "russian-hosts.txt"
 
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+def extract_domains_from_abp(text: str) -> set[str]:
+    """
+    Берём Adblock Plus-правила (ruadlist+easylist.txt)
+    и вытаскиваем домены вида ||domain.tld^
+    """
+    domains = set()
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
+    # Простой паттерн для строк "||domain.tld^"
+    abp_re = re.compile(r"^\|\|([a-zA-Z0-9._-]+\.[a-zA-Z]{2,})(\^|$)")
 
-      - name: Install deps
-        run: pip install requests
+    for line in text.splitlines():
+        line = line.strip()
 
-      - name: Build russian-hosts.txt
-        run: python build.py
+        # Пропускаем пустое и комментарии / стили
+        if not line or line.startswith(("!", "[", "@@", "/", "#")):
+            continue
 
-      - name: Commit and push if changed
-        run: |
-          # Добавляем файл в индекс (в т.ч. если он новый)
-          git add russian-hosts.txt
+        # Ищем ||domain.tld^
+        m = abp_re.match(line)
+        if m:
+            d = m.group(1).lower()
+            # уберём ведущую точку, если есть
+            d = d.lstrip(".")
+            domains.add(d)
 
-          # Проверяем изменения в индексе
-          if git diff --cached --quiet; then
-            echo "No changes – nothing to commit."
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit -m "Update russian-hosts.txt"
-            git push
-          fi
+    return domains
+
+def main():
+    print(f"Downloading {SRC_URL} ...")
+    resp = requests.get(SRC_URL, timeout=60)
+    resp.raise_for_status()
+
+    text = resp.text
+    domains = extract_domains_from_abp(text)
+
+    # Сортируем, чтобы diff был красивым
+    sorted_domains = sorted(domains)
+
+    print(f"Extracted {len(sorted_domains)} domains")
+
+    with open(OUT_FILE, "w", encoding="utf-8") as f:
+        for d in sorted_domains:
+            f.write(d + "\n")
+
+    print(f"Wrote {OUT_FILE}")
+
+if __name__ == "__main__":
+    main()
