@@ -26,12 +26,15 @@ jobs:
 
       - name: Commit and push if changed
         run: |
-          if git diff --quiet; then
-            echo "No changes — nothing to commit."
+          # Добавляем файл в индекс (в т.ч. если он новый)
+          git add russian-hosts.txt
+
+          # Проверяем изменения в индексе
+          if git diff --cached --quiet; then
+            echo "No changes – nothing to commit."
           else
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add russian-hosts.txt
             git commit -m "Update russian-hosts.txt"
             git push
           fi
